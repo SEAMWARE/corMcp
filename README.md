@@ -53,7 +53,7 @@ All read-only.
 |---|---|
 | `list_types` | `GET /types?details=true` |
 | `list_attributes` | `GET /attributes?details=true`, or `GET /types/{type}` |
-| `query_entities` | `GET /entities` - type, ids, idPattern, q, scopeQ, geoQ, csf, attrs, pick, omit, datasetId, lang, format, limit, offset |
+| `query_entities` | `GET /entities` - type, ids, idPattern, q, scopeQ, geoQ, csf, pick, omit, datasetId, lang, format, limit, offset |
 | `get_entity` | `GET /entities/{id}` |
 | `count_entities` | `GET /entities?count=true&limit=0` |
 | `temporal` | `GET /temporal/entities[/{id}]` - timerel, timeAt, endTimeAt, timeproperty, lastN, aggrMethods, aggrPeriodDuration |
