@@ -110,7 +110,11 @@ static CorNode* initialize(CorAlloc* allocP, CorNode* paramsP)
   corTreeChildAdd(resultP, corTreeString(allocP, "protocolVersion", version));
   corTreeChildAdd(resultP, capsP);
   corTreeChildAdd(resultP, infoP);
-  corTreeChildAdd(resultP, corTreeString(allocP, "instructions", toolsInstructions));
+  char instructions[2048];
+  snprintf(instructions, sizeof(instructions), "%s This session: the broker %s, %s%s%s.", toolsInstructions, mcpSession.broker,
+           (mcpSession.tenant != NULL) ? "the tenant '" : "the default tenant", (mcpSession.tenant != NULL) ? mcpSession.tenant : "",
+           (mcpSession.tenant != NULL) ? "'" : "");
+  corTreeChildAdd(resultP, corTreeString(allocP, "instructions", instructions));
 
   return resultP;
 }

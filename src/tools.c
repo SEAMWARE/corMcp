@@ -33,7 +33,8 @@ const char* toolsInstructions =
   "observedAt), a GeoProperty (GeoJSON, longitude first) or a Relationship (the object: another entity's id). "
   "Attributes can have sub-attributes. Short names (Vehicle, speed) are expanded by the session's @context; "
   "use them as list_types and list_attributes show them. Start with list_types to see what the broker holds. "
-  "The session is bound to one broker and one tenant, chosen by the user - no tool selects another.";
+  "The session is bound to one broker and one tenant, chosen by the user - no tool selects another; another tenant "
+  "is a new session, which only the user starts.";
 
 
 
@@ -46,18 +47,20 @@ const char* toolsInstructions =
   "\"ids\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"Entity ids\" },"            \
   "\"idPattern\": { \"type\": \"string\", \"description\": \"A regular expression the entity id matches, e.g. urn:ngsi-ld:Vehicle:.*\" }," \
   "\"q\": { \"type\": \"string\", \"description\": \"Attribute filter. speed>90 ; status==\\\"moving\\\" (strings in double quotes) ; "  \
-          "a;b = and, a|b = or, parentheses ; speed==50..90 (range) ; status==\\\"a\\\",\\\"b\\\" (any of) ; name~=\\\"^Bus\\\" (regex) ; "     \
+          "a;b = and, a|b = or, parentheses ; speed==50..90 (range) ; status==\\\"a\\\",\\\"b\\\" (any of) ; "  \
+          "name~=\\\"^[Bb]us\\\" (a POSIX extended regular expression, case-sensitive: [Rr]etiro, never (?i)) ; "     \
           "brand.model==\\\"X\\\" (into a sub-attribute or an object value: attr.sub, attr[key]) ; speed.observedAt>2026-01-01T00:00:00Z ; "  \
           "!speed (absent) ; speed (present)\" },"                                                                  \
   "\"scopeQ\": { \"type\": \"string\", \"description\": \"Scope filter: /Madrid/# (the scope and everything below), /Madrid/+ (one level down)\" }," \
   "\"geoQ\": { \"type\": \"object\", \"description\": \"Geographical filter, e.g. { georel: 'near;maxDistance==2000', geometry: 'Point', coordinates: [-3.70, 40.41] } "  \
-             "- coordinates as GeoJSON, longitude first; distances in metres\", \"properties\": {"                   \
+             "- coordinates as GeoJSON, longitude first; distances in metres. A well-known place (Puerta del Sol, a city) is not "  \
+             "an entity unless list_types shows its type: use the coordinates you know\", \"properties\": {"                   \
      "\"georel\": { \"type\": \"string\", \"description\": \"near;maxDistance==<m> | near;minDistance==<m> | within | contains | intersects | disjoint | overlaps | equals\" }," \
      "\"geometry\": { \"type\": \"string\", \"enum\": [\"Point\", \"LineString\", \"Polygon\", \"MultiPoint\", \"MultiLineString\", \"MultiPolygon\"] }," \
      "\"coordinates\": { \"type\": \"array\", \"description\": \"GeoJSON coordinates of the geometry\" },"           \
      "\"geoproperty\": { \"type\": \"string\", \"description\": \"The GeoProperty to test (default: location)\" } }," \
      "\"required\": [\"georel\", \"geometry\", \"coordinates\"] },"                                                  \
-  "\"csf\": { \"type\": \"string\", \"description\": \"Context source filter (registrations' information)\" },"
+  "\"csf\": { \"type\": \"string\", \"description\": \"Context source filter (registrations' information)\" }"
 
 #define SHAPE_PROPERTIES                                                                                             \
   "\"pick\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"Only these attributes (and id, type) in each entity\" }," \
@@ -66,7 +69,7 @@ const char* toolsInstructions =
   "\"lang\": { \"type\": \"string\", \"description\": \"Language for LanguageProperties: en, es, *\" },"            \
   "\"format\": { \"type\": \"string\", \"enum\": [\"concise\", \"normalized\", \"simplified\"], "                     \
               "\"description\": \"concise (default): every attribute's value with its sub-attributes, unitCode, observedAt, datasetId - nothing lost. "  \
-              "simplified: the values alone - use only when values alone answer the question. normalized: the full NGSI-LD form\" },"
+              "simplified: the values alone - use only when values alone answer the question. normalized: the full NGSI-LD form\" }"
 
 #define PAGE_PROPERTIES                                                                                              \
   "\"limit\": { \"type\": \"integer\", \"minimum\": 1, \"description\": \"At most this many (default 20); the result tells how many there are in all\" }," \
@@ -108,7 +111,6 @@ static const Param shapeParams[] =
 {
   { "pick",       "pick",       PkList, ","     },
   { "omit",       "omit",       PkList, ","     },
-  { "attrs",      "attrs",      PkList, ","     },
   { "datasetId",  "datasetId",  PkList, ","     },
   { "lang",       "lang",       PkList, ","     },
   { NULL,         NULL,         PkText, NULL    }
@@ -539,7 +541,7 @@ static CorNode* countEntities(Call* cP)
   McpResponse resp;
   CorNode*    errP;
 
-  if (!paramsAdd(cP, filterParams) || !geoQAdd(cP) || !paramsAdd(cP, attrsParams))
+  if (!paramsAdd(cP, filterParams) || !geoQAdd(cP))
     return shapeError(cP->allocP, "%s", cP->error);
 
   queryAdd(cP, "count", "true", NULL);
@@ -587,7 +589,7 @@ static CorNode* temporal(Call* cP)
     return shapeError(cP->allocP, "%s - before, after or between", cP->error);
 
   cP->error[0] = 0;
-  if (!paramsAdd(cP, temporalParams) || !paramsAdd(cP, shapeParams))
+  if (!paramsAdd(cP, temporalParams) || !paramsAdd(cP, attrsParams) || !paramsAdd(cP, shapeParams))
     return shapeError(cP->allocP, "%s", cP->error);
 
   if ((aggrP != NULL) && (aggrP->type != CorNull))
@@ -679,29 +681,29 @@ static const Tool tools[] =
   },
   {
     "query_entities", "Query entities",
-    "The entities that match the filters - at least one of type, attrs, q, geoQ (ids and idPattern narrow them). "
-    "Example: { type: 'Vehicle', q: 'speed>90;status==\"moving\"', pick: ['speed', 'location'] }. "
-    "The result: { count (all matches), returned, more, entities }. Page with limit and offset; "
-    "use count_entities when the number alone is the answer.",
-    "{ \"type\": \"object\", \"properties\": { " FILTER_PROPERTIES
-      "\"attrs\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"Entities that have at least one of these attributes; only these attributes in each\" },"
-      SHAPE_PROPERTIES PAGE_PROPERTIES " } }",
+    "The entities that match the filters - at least one of type, q, geoQ; ids and idPattern narrow them, and "
+    "need a type too. Example: { type: 'Vehicle', q: 'speed>90;status==\"moving\"', pick: ['speed', 'location'] }. "
+    "The entities that have an attribute: q: 'speed'. "
+    "An object value is filtered by its keys: q: 'brand[name]==\"Mercedes\"'. "
+    "The result: { count (all matches), returned, more, entities }; when more is true, page with offset. "
+    "For one entity whose id you can form, get_entity; when the number alone is the answer, count_entities.",
+    "{ \"type\": \"object\", \"properties\": { " FILTER_PROPERTIES "," SHAPE_PROPERTIES "," PAGE_PROPERTIES " } }",
     queryEntities
   },
   {
     "get_entity", "Get an entity",
-    "One entity by its id, every attribute (or pick/omit). Example: { id: 'urn:ngsi-ld:Vehicle:B-123' }.",
+    "One entity by its id, every attribute (or pick/omit). Ids are URIs, usually urn:ngsi-ld:<type>:<name> - the "
+    "user's 'B-123' of type Vehicle is { id: 'urn:ngsi-ld:Vehicle:B-123' }: try that before searching. "
+    "A Relationship's object is the id of the entity it points to - get_entity it to follow the relationship.",
     "{ \"type\": \"object\", \"properties\": { \"id\": { \"type\": \"string\", \"description\": \"The entity id (a URI)\" }, "
-      SHAPE_PROPERTIES
-      "\"attrs\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"Only these attributes\" } }, \"required\": [\"id\"] }",
+      SHAPE_PROPERTIES " }, \"required\": [\"id\"] }",
     getEntity
   },
   {
     "count_entities", "Count entities",
-    "How many entities match the filters (the same filters as query_entities) - no entities returned. "
-    "Example: { type: 'Vehicle', q: 'speed>90' }.",
-    "{ \"type\": \"object\", \"properties\": { " FILTER_PROPERTIES
-      "\"attrs\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"Entities that have at least one of these attributes\" } } }",
+    "How many entities match the filters (the same filters as query_entities) - no entities returned. The count is "
+    "exact: no query is needed to check it. Example: { type: 'Vehicle', q: 'speed>90' }.",
+    "{ \"type\": \"object\", \"properties\": { " FILTER_PROPERTIES " } }",
     countEntities
   },
   {
@@ -713,7 +715,7 @@ static const Tool tools[] =
     "The broker must keep history (temporal API); an error says when it does not.",
     "{ \"type\": \"object\", \"properties\": { "
       "\"id\": { \"type\": \"string\", \"description\": \"One entity's id - or use the filters\" }, "
-      FILTER_PROPERTIES
+      FILTER_PROPERTIES ","
       "\"attrs\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"The attributes whose history is wanted\" },"
       "\"timerel\": { \"type\": \"string\", \"enum\": [\"before\", \"after\", \"between\"] },"
       "\"timeAt\": { \"type\": \"string\", \"description\": \"ISO 8601, e.g. 2026-10-01T00:00:00Z\" },"
