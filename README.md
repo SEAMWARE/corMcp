@@ -90,16 +90,25 @@ as skipped, with the broker's answer.
 ## Evaluation
 
 `eval/` measures how well a model answers with corMcp's tools - what the descriptions teach it ("this tool is
-for that"). A fixed dataset (a Madrid fleet: 12 vehicles, 3 depots, 25 parking spots, 3 air-quality stations
-with a day of NO2 history, a subscription) is seeded in the tenant `mcpeval`, and 32 questions in plain
-language are asked, each in a fresh conversation:
+for that"). Two sets of fixed data, each seeded in a tenant of its own, and questions in plain language, each
+asked in a fresh conversation:
+
+| Set | Tenant | Data | Questions |
+|---|---|---|---|
+| `fleet` | `mcpeval` | Madrid: 12 vehicles, 3 depots, 25 parking spots, 3 air-quality stations with a day of NO2 history, a subscription | 32 |
+| `building` | `mcpbuilding` | Berlin: 2 office buildings, 16 rooms, 4 HVAC units, 2 energy meters with a day of history | 21 |
+
+No example in corMcp's descriptions comes from either set (they use shops: `Store`, `stock`, the Eiffel
+Tower), so what a model gets right, the descriptions taught it.
 
 ```
-ANTHROPIC_API_KEY=... python3 eval/run.py --broker http://localhost:1026 [--model M] [--cases a,b] [--label L]
+ANTHROPIC_API_KEY=... python3 eval/run.py --broker http://localhost:1026 [--set fleet,building] [--model M] [--cases a,b] [--label L]
 ```
 
-Each answer is scored: right or wrong (the expected answers are computed from the dataset), the tools a
-good answer uses, and the tool calls against a budget; tokens and seconds are recorded. A run writes
+Each answer is scored: right or wrong (the expected answers are computed from the data; lists and numbers
+are read from the answer's last line, `ANSWER: ...`, which the evaluation's system prompt asks for), the tools
+a good answer uses, and the tool calls against a budget; tokens and seconds are recorded. A call the host
+could not route to corMcp (a tool name the model wrote without the host's prefix) is counted apart. A run writes
 `eval/results/<time>-<provider>-<model>[-label].json`; `--rescore <file>` scores a run again with the current
 cases, without calling the model. The questions that need the temporal API are skipped on a broker without
 one.

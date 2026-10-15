@@ -31,7 +31,7 @@ const char* toolsInstructions =
   "Read access to an NGSI-LD context broker (ETSI TS 104 175). The data are entities: each has an id (a URI, "
   "often urn:ngsi-ld:<Type>:<name>), a type, and attributes - a Property (a value, maybe with unitCode and "
   "observedAt), a GeoProperty (GeoJSON, longitude first) or a Relationship (the object: another entity's id). "
-  "Attributes can have sub-attributes. Short names (Vehicle, speed) are expanded by the session's @context; "
+  "Attributes can have sub-attributes. Short names (Store, stock) are expanded by the session's @context; "
   "use them as list_types and list_attributes show them. Start with list_types to see what the broker holds. "
   "The session is bound to one broker and one tenant, chosen by the user - no tool selects another; another tenant "
   "is a new session, which only the user starts.";
@@ -43,17 +43,17 @@ const char* toolsInstructions =
 // Schemas - the filters that select entities, shared by query_entities, count_entities and temporal
 //
 #define FILTER_PROPERTIES                                                                                            \
-  "\"type\": { \"type\": \"string\", \"description\": \"Entity type(s): Vehicle; Vehicle,Car (either); a type expression with ; (and), | (or), parentheses\" },"  \
+  "\"type\": { \"type\": \"string\", \"description\": \"Entity type(s): Store; Store,Warehouse (either); a type expression with ; (and), | (or), parentheses\" },"  \
   "\"ids\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"Entity ids\" },"            \
-  "\"idPattern\": { \"type\": \"string\", \"description\": \"A regular expression the entity id matches, e.g. urn:ngsi-ld:Vehicle:.*\" }," \
-  "\"q\": { \"type\": \"string\", \"description\": \"Attribute filter. speed>90 ; status==\\\"moving\\\" (strings in double quotes) ; "  \
-          "a;b = and, a|b = or, parentheses ; speed==50..90 (range) ; status==\\\"a\\\",\\\"b\\\" (any of) ; "  \
-          "name~=\\\"^[Bb]us\\\" (a POSIX extended regular expression, case-sensitive: [Rr]etiro, never (?i)) ; "     \
-          "brand.model==\\\"X\\\" (into a sub-attribute or an object value: attr.sub, attr[key]) ; speed.observedAt>2026-01-01T00:00:00Z ; "  \
-          "!speed (absent) ; speed (present)\" },"                                                                  \
-  "\"scopeQ\": { \"type\": \"string\", \"description\": \"Scope filter: /Madrid/# (the scope and everything below), /Madrid/+ (one level down)\" }," \
-  "\"geoQ\": { \"type\": \"object\", \"description\": \"Geographical filter, e.g. { georel: 'near;maxDistance==2000', geometry: 'Point', coordinates: [-3.70, 40.41] } "  \
-             "- coordinates as GeoJSON, longitude first; distances in metres. A well-known place (Puerta del Sol, a city) is not "  \
+  "\"idPattern\": { \"type\": \"string\", \"description\": \"A regular expression the entity id matches, e.g. urn:ngsi-ld:Store:S-.*\" }," \
+  "\"q\": { \"type\": \"string\", \"description\": \"Attribute filter. stock<10 ; status==\\\"open\\\" (strings in double quotes) ; "  \
+          "a;b = and, a|b = or, parentheses ; stock==10..50 (range) ; status==\\\"a\\\",\\\"b\\\" (any of) ; "  \
+          "name~=\\\"^[Bb]akery\\\" (a POSIX extended regular expression, case-sensitive: [Pp]aris, never (?i)) ; "     \
+          "stock.accuracy<2 (a sub-attribute: attr.sub) ; dimensions[width]>2 (a key of an object value: attr[key]) ; stock.observedAt>2026-01-01T00:00:00Z ; "  \
+          "!stock (absent) ; stock (present)\" },"                                                                  \
+  "\"scopeQ\": { \"type\": \"string\", \"description\": \"Scope filter: /France/# (the scope and everything below), /France/+ (one level down)\" }," \
+  "\"geoQ\": { \"type\": \"object\", \"description\": \"Geographical filter, e.g. { georel: 'near;maxDistance==2000', geometry: 'Point', coordinates: [2.2945, 48.8584] } "  \
+             "- coordinates as GeoJSON, longitude first; distances in metres. A well-known place (the Eiffel Tower, a city) is not "  \
              "an entity unless list_types shows its type: use the coordinates you know\", \"properties\": {"                   \
      "\"georel\": { \"type\": \"string\", \"description\": \"near;maxDistance==<m> | near;minDistance==<m> | within | contains | intersects | disjoint | overlaps | equals\" }," \
      "\"geometry\": { \"type\": \"string\", \"enum\": [\"Point\", \"LineString\", \"Polygon\", \"MultiPoint\", \"MultiLineString\", \"MultiPolygon\"] }," \
@@ -676,15 +676,15 @@ static const Tool tools[] =
     "list_attributes", "Attributes",
     "The attribute names in use, with the types that have each one and its attribute types (Property, "
     "Relationship, GeoProperty, ...). With 'type': the attributes of that entity type only.",
-    "{ \"type\": \"object\", \"properties\": { \"type\": { \"type\": \"string\", \"description\": \"An entity type, e.g. Vehicle\" } } }",
+    "{ \"type\": \"object\", \"properties\": { \"type\": { \"type\": \"string\", \"description\": \"An entity type, e.g. Store\" } } }",
     listAttributes
   },
   {
     "query_entities", "Query entities",
     "The entities that match the filters - at least one of type, q, geoQ; ids and idPattern narrow them, and "
-    "need a type too. Example: { type: 'Vehicle', q: 'speed>90;status==\"moving\"', pick: ['speed', 'location'] }. "
-    "The entities that have an attribute: q: 'speed'. "
-    "An object value is filtered by its keys: q: 'brand[name]==\"Mercedes\"'. "
+    "need a type too. Example: { type: 'Store', q: 'stock<10;status==\"open\"', pick: ['stock', 'location'] }. "
+    "The entities that have an attribute: q: 'stock'. "
+    "An object value is filtered by its keys: q: 'dimensions[width]>2'. "
     "The result: { count (all matches), returned, more, entities }; when more is true, page with offset. "
     "For one entity whose id you can form, get_entity; when the number alone is the answer, count_entities.",
     "{ \"type\": \"object\", \"properties\": { " FILTER_PROPERTIES "," SHAPE_PROPERTIES "," PAGE_PROPERTIES " } }",
@@ -693,7 +693,7 @@ static const Tool tools[] =
   {
     "get_entity", "Get an entity",
     "One entity by its id, every attribute (or pick/omit). Ids are URIs, usually urn:ngsi-ld:<type>:<name> - the "
-    "user's 'B-123' of type Vehicle is { id: 'urn:ngsi-ld:Vehicle:B-123' }: try that before searching. "
+    "user's 'S-17' of type Store is { id: 'urn:ngsi-ld:Store:S-17' }: try that before searching. "
     "A Relationship's object is the id of the entity it points to - get_entity it to follow the relationship.",
     "{ \"type\": \"object\", \"properties\": { \"id\": { \"type\": \"string\", \"description\": \"The entity id (a URI)\" }, "
       SHAPE_PROPERTIES " }, \"required\": [\"id\"] }",
@@ -702,7 +702,7 @@ static const Tool tools[] =
   {
     "count_entities", "Count entities",
     "How many entities match the filters (the same filters as query_entities) - no entities returned. The count is "
-    "exact: no query is needed to check it. Example: { type: 'Vehicle', q: 'speed>90' }.",
+    "exact: no query is needed to check it. Example: { type: 'Store', q: 'stock<10' }.",
     "{ \"type\": \"object\", \"properties\": { " FILTER_PROPERTIES " } }",
     countEntities
   },
@@ -710,7 +710,7 @@ static const Tool tools[] =
     "temporal", "History",
     "The history of attribute values (temporal representation), for one entity (id) or the entities the filters "
     "match. timerel: before | after | between (with endTimeAt); timeAt and endTimeAt in ISO 8601 UTC. "
-    "Example: { id: 'urn:ngsi-ld:Vehicle:B-123', attrs: ['speed'], timerel: 'after', timeAt: '2026-10-01T00:00:00Z', lastN: 10 }. "
+    "Example: { id: 'urn:ngsi-ld:Store:S-17', attrs: ['stock'], timerel: 'after', timeAt: '2026-10-01T00:00:00Z', lastN: 10 }. "
     "Aggregation: aggrMethods (avg, min, max, sum, sumsq, totalCount, distinctCount) over aggrPeriodDuration (ISO 8601: PT1H). "
     "The broker must keep history (temporal API); an error says when it does not.",
     "{ \"type\": \"object\", \"properties\": { "
@@ -742,9 +742,9 @@ static const Tool tools[] =
     "query_registrations", "Context source registrations",
     "The context source registrations: which other brokers or sources hold which entities and attributes, "
     "and how the broker forwards to them. NGSI-LD wants at least one filter (type, ids, idPattern, attrs, q, csf): "
-    "to see them all, pass every type list_types shows, e.g. { type: 'Vehicle,Depot' }.",
+    "to see them all, pass every type list_types shows, e.g. { type: 'Store,Warehouse' }.",
     "{ \"type\": \"object\", \"properties\": { "
-      "\"type\": { \"type\": \"string\", \"description\": \"Entity type(s) the registrations cover: Vehicle; Vehicle,Depot\" },"
+      "\"type\": { \"type\": \"string\", \"description\": \"Entity type(s) the registrations cover: Store; Store,Warehouse\" },"
       "\"ids\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"Entity ids the registrations cover\" },"
       "\"idPattern\": { \"type\": \"string\", \"description\": \"A regular expression for the entity ids\" },"
       "\"attrs\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"Attributes the registrations cover\" },"

@@ -5,11 +5,13 @@
 # Copyright 2026 Seamware
 # SPDX-License-Identifier: Apache-2.0
 #
-# The evaluation: seeds the dataset in its own tenant, asks every question through a model and corMcp, and
-# scores each answer - right (the pass/fail), the tools a good answer uses, the number of calls - with the
-# tokens and the time. A result file per run, so a change to a description is measured, not guessed.
+# The evaluation: seeds each set (fleet, building) in a tenant of its own, asks every question through a
+# model and corMcp, and scores each answer - right (the pass/fail), the tools a good answer uses, the number
+# of calls - with the tokens and the time. A result file per run, so a change to a description is measured,
+# not guessed.
 #
-#   run.py [--provider anthropic_api] [--model M] [--broker URL] [--cases a,b] [--parallel N] [--no-seed]
+#   run.py [--set fleet,building] [--provider anthropic_api] [--model M] [--broker URL] [--cases a,b]
+#          [--parallel N] [--no-seed] [--label L] [--rescore <results file>]
 #
 import argparse, concurrent.futures, datetime, importlib, json, os, re, sys
 
@@ -17,12 +19,32 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "providers"))
 
-import dataset
-from cases import CASES
+SETS = ("fleet", "building")
 
 
 
 DISCOVERY = ("list_types", "list_attributes")
+
+
+
+def hostError(call):
+  return call.get("isError") and "No such tool available" in (call.get("error") or "")
+
+
+
+def summary(results):
+  s = [r["score"] for r in results]
+  return { "cases": len(s), "answers": sum(x["answerOk"] for x in s), "tools": sum(x["toolsOk"] for x in s), "callsOk": sum(x["callsOk"] for x in s),
+           "calls": sum(sum(not hostError(c) for c in r["calls"]) for r in results),
+           "toolErrors": sum(sum(c["isError"] and not hostError(c) for c in r["calls"]) for r in results),
+           "hostErrors": sum(sum(bool(hostError(c)) for c in r["calls"]) for r in results) }
+
+
+
+def line(name, m):
+  n = m["cases"]
+  return (f"{name:<9} answers {m['answers']}/{n} - tools {m['tools']}/{n} - within the call budget {m['callsOk']}/{n} - "
+          f"{m['calls']} calls, {m['toolErrors']} failed, {m['hostErrors']} the host could not route")
 
 
 
@@ -36,7 +58,9 @@ def score(case, result):
     text = lines[-1]
   missing = [p for p in case["must"]           if not re.search(p, text, re.I)] + missingText
   extra   = [p for p in case.get("mustNot", []) if re.search(p, text, re.I)]
-  names   = [c["name"] for c in result["calls"]]
+  # a call the host could not route ("No such tool available": Claude Code prefixes MCP tools, mcp__<server>__,
+  # and a model that writes a tool's bare name misses it) never reached corMcp - c³ uses the bare names
+  names   = [c["name"] for c in result["calls"] if not hostError(c)]
   toolsOk = all(any(n in alt.split("|") for n in names) for alt in case["tools"])
   # discovery (list_types, list_attributes) is what a fresh conversation starts with - in c³ once per
   # conversation, here once per question: not counted in the budget unless the case is about it
@@ -48,6 +72,7 @@ def score(case, result):
 
 def main():
   ap = argparse.ArgumentParser()
+  ap.add_argument("--set",      default=",".join(SETS))
   ap.add_argument("--provider", default="anthropic_api")
   ap.add_argument("--model",    default="claude-sonnet-5-5")
   ap.add_argument("--broker",   default=os.environ.get("BROKER_URL", "http://127.0.0.1:1026"))
@@ -60,37 +85,48 @@ def main():
 
   if a.rescore:
     d     = json.load(open(a.rescore))
-    cases = { c["id"]: c for c in CASES }
-    ok    = 0
+    cases = { (s, c["id"]): c for s in SETS for c in importlib.import_module(s).CASES }
     for r in d["results"]:
-      s = score(cases[r["id"]], r)
-      ok += s["answerOk"]
-      if not s["answerOk"]:
-        print(f"  FAIL  {r['id']:<22} missing {s['missing']} extra {s['extra']}")
-    print(f"answers {ok}/{len(d['results'])} (was {d['summary']['answers']}) - {a.rescore}")
+      r["score"] = score(cases[(r.get("set", "fleet"), r["id"])], r)
+      if not r["score"]["answerOk"]:
+        print(f"  FAIL  {r['id']:<22} missing {r['score']['missing']} extra {r['score']['extra']}")
+    for name in SETS:
+      mine = [r for r in d["results"] if r.get("set", "fleet") == name]
+      if mine:
+        print(line(name, summary(mine)))
+    print(a.rescore)
     return
 
   broker   = a.broker.rstrip("/")
   provider = importlib.import_module(a.provider)
   system   = open(os.path.join(HERE, "system.txt")).read().strip()
-  mcpCmd   = [os.path.join(HERE, "..", "corMcp"), "--broker", broker, "--tenant", dataset.TENANT]
+  todo     = []
+  skipped  = 0
 
-  if not a.no_seed:
-    dataset.seed(broker)
-  temporal = dataset.hasTemporal(broker)
+  for name in a.set.split(","):
+    mod = importlib.import_module(name)
+    if not a.no_seed:
+      mod.seed(broker)
+    temporal = mod.temporal(broker)
+    mcpCmd   = [os.path.join(HERE, "..", "corMcp"), "--broker", broker, "--tenant", mod.TENANT]
+    for c in mod.CASES:
+      if a.cases and c["id"] not in a.cases.split(","):
+        continue
+      if c.get("temporal") and not temporal:
+        skipped += 1
+        continue
+      todo.append(dict(c, set=name, mcpCmd=mcpCmd))
 
-  cases = [c for c in CASES if not a.cases or c["id"] in a.cases.split(",")]
-  todo  = [c for c in cases if temporal or not c.get("temporal")]
-  print(f"{len(todo)} cases ({len(cases) - len(todo)} skipped: no temporal API), {a.provider} {a.model}, {broker}", flush=True)
+  print(f"{len(todo)} cases ({skipped} skipped: no temporal API), {a.set}, {a.provider} {a.model}, {broker}", flush=True)
 
   def one(case):
     try:
-      r = provider.run(case["q"], system, mcpCmd, a.model)
+      r = provider.run(case["q"], system, case["mcpCmd"], a.model)
     except Exception as e:
       r = { "answer": "", "calls": [], "turns": 0, "usage": {}, "costUsd": None, "seconds": 0, "error": f"{type(e).__name__}: {e}" }
     r["score"] = score(case, r)
     s = r["score"]
-    print(f"  {'ok  ' if s['answerOk'] else 'FAIL'}  {case['id']:<22} tools {'ok' if s['toolsOk'] else '--'}  calls {len(r['calls'])}{'' if s['callsOk'] else '!'}  {r['seconds']}s"
+    print(f"  {'ok  ' if s['answerOk'] else 'FAIL'}  {case['set'][:5]:<5} {case['id']:<22} tools {'ok' if s['toolsOk'] else '--'}  calls {len(r['calls'])}{'' if s['callsOk'] else '!'}  {r['seconds']}s"
           + (f"  missing {s['missing']}" if s["missing"] else "") + (f"  extra {s['extra']}" if s["extra"] else "")
           + (f"  ERROR {r['error']}" if r.get("error") else ""), flush=True)
     return case, r
@@ -107,6 +143,8 @@ def main():
   cost    = sum((r.get("costUsd") or 0) for _, r in done)
   secs    = sum(r["seconds"] for _, r in done)
 
+  for name in a.set.split(","):
+    print(line(name, summary([r for c, r in done if c["set"] == name])))
   print(f"\nanswers {answers}/{n} - tools {tools}/{n} - within the call budget {callsOk}/{n} - {calls} tool calls ({errs} errors) - "
         f"{secs:.0f} s" + (f" - ${cost:.2f}" if cost else ""))
 
@@ -114,9 +152,9 @@ def main():
   stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
   path  = os.path.join(HERE, "results", f"{stamp}-{a.provider}-{a.model}{'-' + a.label if a.label else ''}.json")
   with open(path, "w") as f:
-    json.dump({ "provider": a.provider, "model": a.model, "broker": broker, "label": a.label,
+    json.dump({ "provider": a.provider, "model": a.model, "broker": broker, "label": a.label, "sets": a.set,
                 "summary": { "cases": n, "answers": answers, "tools": tools, "callsOk": callsOk, "calls": calls, "toolErrors": errs, "seconds": secs, "costUsd": cost },
-                "results": [ dict(id=c["id"], q=c["q"], **r) for c, r in done ] }, f, indent=1, ensure_ascii=False)
+                "results": [ dict(set=c["set"], id=c["id"], q=c["q"], **r) for c, r in done ] }, f, indent=1, ensure_ascii=False)
   print(path)
 
 
