@@ -2,3 +2,6 @@ obj/
 /corMcp
 __pycache__/
 eval/results/
+
+# A provider kept on the developer's machine only, never committed
+eval/providers/claude_code.py
