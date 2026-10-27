@@ -585,8 +585,19 @@ static CorNode* temporal(Call* cP)
   CorNode*    aggrP = corTreeLookup(cP->argsP, "aggrMethods");
   int         limit = 0;
 
-  if (stringArg(cP, "timerel") == NULL)
+  const char* timerel = stringArg(cP, "timerel");
+
+  if (timerel == NULL)
     return shapeError(cP->allocP, "%s - before, after or between", cP->error);
+
+  if ((strcmp(timerel, "before") != 0) && (strcmp(timerel, "after") != 0) && (strcmp(timerel, "between") != 0))
+    return shapeError(cP->allocP, "'timerel' is before, after or between - not '%s'", timerel);
+
+  if (stringArg(cP, "timeAt") == NULL)                               // every timerel has a timeAt (§ 4.11)
+    return shapeError(cP->allocP, "%s - ISO 8601, with timerel %s", cP->error, timerel);
+
+  if ((strcmp(timerel, "between") == 0) && (stringArg(cP, "endTimeAt") == NULL))
+    return shapeError(cP->allocP, "%s - ISO 8601, with timerel between", cP->error);
 
   cP->error[0] = 0;
   if (!paramsAdd(cP, temporalParams) || !paramsAdd(cP, attrsParams) || !paramsAdd(cP, shapeParams))
@@ -711,7 +722,7 @@ static const Tool tools[] =
     "The history of attribute values (temporal representation), for one entity (id) or the entities the filters "
     "match. timerel: before | after | between (with endTimeAt); timeAt and endTimeAt in ISO 8601 UTC. "
     "Example: { id: 'urn:ngsi-ld:Store:S-17', attrs: ['stock'], timerel: 'after', timeAt: '2026-10-01T00:00:00Z', lastN: 10 }. "
-    "Aggregation: aggrMethods (avg, min, max, sum, sumsq, totalCount, distinctCount) over aggrPeriodDuration (ISO 8601: PT1H). "
+    "Aggregation: aggrMethods (avg, min, max, sum, sumsq, stddev, totalCount, distinctCount) over aggrPeriodDuration (ISO 8601: PT1H). "
     "The broker must keep history (temporal API); an error says when it does not.",
     "{ \"type\": \"object\", \"properties\": { "
       "\"id\": { \"type\": \"string\", \"description\": \"One entity's id - or use the filters\" }, "
