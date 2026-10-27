@@ -245,6 +245,16 @@ def main():
             assert r["speed"]["values"][0][0] == 95, r
         check("temporal: one entity, temporalValues", temporal)
 
+        def temporalTimes():
+            id = f"urn:ngsi-ld:{TYPE}:V1"
+            r = m.tool("temporal", id=id, timerel="after")
+            assert r["isError"] is True and "'timeAt' is required" in r["structuredContent"]["error"], r
+            r = m.tool("temporal", id=id, timerel="between", timeAt="2026-10-15T09:00:00Z")
+            assert r["isError"] is True and "'endTimeAt' is required" in r["structuredContent"]["error"], r
+            r = m.tool("temporal", id=id, timerel="during", timeAt="2026-10-15T09:00:00Z")
+            assert r["isError"] is True and "'timerel'" in r["structuredContent"]["error"], r
+        check("temporal: timeAt always, endTimeAt with between", temporalTimes)
+
         def subscriptions():
             r = ok(m.tool("list_subscriptions"))
             assert isinstance(r["subscriptions"], list) and r["returned"] == len(r["subscriptions"])
