@@ -53,8 +53,6 @@ claude mcp add ngsild -- corMcp --broker http://localhost:1026
 
 All read-only.
 
-| Tool | NGSI-LD |
-|---|---|
 | Tool | NGSI-LD | Arguments (required in bold) |
 |---|---|---|
 | `list_types` | `GET /types?details=true` | - |
